@@ -1,5 +1,6 @@
 package app;
 
+import app.downstream.DownstreamService;
 import app.exception.DuplicateEventException;
 import app.exception.InvalidAmountRangeException;
 import app.exception.InvalidEventException;
@@ -13,6 +14,8 @@ import app.repository.PaymentRepository;
 import app.service.Processor;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Tests {
     private static final Instant T0 = Instant.parse("2026-10-30T10:00:00Z");
@@ -25,11 +28,57 @@ public class Tests {
         rejectsDuplicates();
         guardsStateTransitions();
         guardsEventTime();
+        broadcastsToDownstreams();
         Check.summary();
     }
 
     private static Processor newProcessor() {
-        return new Processor(new PaymentRepository(), new EventRepository());
+        return new Processor(new PaymentRepository(), new EventRepository(), new ArrayList<>());
+    }
+
+    private static class RecordingDownstream implements DownstreamService {
+        final List<String> received = new ArrayList<>();
+
+        @Override
+        public void sendPayload(Event event) {
+            received.add(event.getEventId());
+        }
+    }
+
+    private static class FailingDownstream implements DownstreamService {
+        @Override
+        public void sendPayload(Event event) {
+            throw new IllegalStateException("downstream unavailable");
+        }
+    }
+
+    private static void broadcastsToDownstreams() {
+        RecordingDownstream notification = new RecordingDownstream();
+        RecordingDownstream ledger = new RecordingDownstream();
+        List<DownstreamService> downstreams = new ArrayList<>();
+        downstreams.add(notification);
+        downstreams.add(ledger);
+        Processor p = new Processor(new PaymentRepository(), new EventRepository(), downstreams);
+        Payment pay = payment(10000);
+
+        Check.eq(p.receiveSendEmit(event("evt_b1", pay, PaymentState.AUTHORIZED, T0)), "ACK:evt_b1", "accepted event acked");
+        Check.eq(notification.received.toString(), "[evt_b1]", "notification received accepted event");
+        Check.eq(ledger.received.toString(), "[evt_b1]", "ledger received accepted event");
+
+        Check.throwsEx(() -> p.receiveSendEmit(event("evt_b1", pay, PaymentState.AUTHORIZED, T0)),
+                DuplicateEventException.class, "duplicate dropped");
+        Check.throwsEx(() -> p.receiveSendEmit(event("evt_b2", pay, PaymentState.AUTHORIZED, T1)),
+                InvalidPaymentStateException.class, "invalid transition dropped");
+        Check.eq(notification.received.size(), 1, "dropped events are not broadcast");
+
+        RecordingDownstream afterFailure = new RecordingDownstream();
+        List<DownstreamService> withFailure = new ArrayList<>();
+        withFailure.add(new FailingDownstream());
+        withFailure.add(afterFailure);
+        Processor q = new Processor(new PaymentRepository(), new EventRepository(), withFailure);
+        Check.eq(q.receiveSendEmit(event("evt_b3", payment(10000), PaymentState.AUTHORIZED, T0)), "ACK:evt_b3",
+                "failing downstream does not block the ack");
+        Check.eq(afterFailure.received.toString(), "[evt_b3]", "failing downstream does not block the next one");
     }
 
     /** Each call is a distinct payment, so independent AUTHORIZED events don't collide. */
@@ -47,7 +96,7 @@ public class Tests {
 
     private static void guardsStateTransitions() {
         PaymentRepository payments = new PaymentRepository();
-        Processor p = new Processor(payments, new EventRepository());
+        Processor p = new Processor(payments, new EventRepository(), new ArrayList<>());
         Payment pay = payment(10000);
         p.receiveSendEmit(event("evt_a", pay, PaymentState.AUTHORIZED, T0));
         Check.eq(p.receiveSendEmit(event("evt_c", pay, PaymentState.CAPTURED, T1)), "ACK:evt_c", "authorized -> captured accepted");
@@ -76,7 +125,7 @@ public class Tests {
 
     private static void guardsEventTime() {
         PaymentRepository payments = new PaymentRepository();
-        Processor p = new Processor(payments, new EventRepository());
+        Processor p = new Processor(payments, new EventRepository(), new ArrayList<>());
         Payment pay = payment(10000);
         p.receiveSendEmit(event("evt_a", pay, PaymentState.AUTHORIZED, T1));
 

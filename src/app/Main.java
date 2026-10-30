@@ -1,5 +1,8 @@
 package app;
 
+import app.downstream.DownstreamService;
+import app.downstream.LedgerService;
+import app.downstream.NotificationService;
 import app.model.Event;
 import app.model.Payment;
 import app.model.PaymentState;
@@ -8,12 +11,17 @@ import app.repository.PaymentRepository;
 import app.service.Processor;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Plays the upstream (RazorPay) side: emits events, including retries and bad ones, and prints each outcome. */
 public class Main {
     public static void main(String[] args) {
         PaymentRepository payments = new PaymentRepository();
-        Processor processor = new Processor(payments, new EventRepository());
+        List<DownstreamService> downstreams = new ArrayList<>();
+        downstreams.add(new NotificationService());
+        downstreams.add(new LedgerService());
+        Processor processor = new Processor(payments, new EventRepository(), downstreams);
 
         Payment pay = new Payment("pay_456", 10000L, "INR", at("10:00"), PaymentState.AUTHORIZED);
         Payment tooSmall = new Payment("pay_789", 99L, "INR", at("10:00"), PaymentState.AUTHORIZED);
