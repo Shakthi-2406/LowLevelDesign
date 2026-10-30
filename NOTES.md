@@ -43,6 +43,7 @@ To build a processor
 - to send payload to our downstream system
 - if the incoming event's event type is an invalid transition of payment's current state, throw exception and drop it
 - if the incoming event's timestamp is older than the payment's last updated timestamp, throw exception and rop it
+- the first event for a new payment can be authorized or anything else 
 
 # <Out of Scope>
 - Currency will only be in INR
@@ -50,6 +51,7 @@ To build a processor
 - notication service / ledger service would just receive event data for now, user details are handles inside
 - Deleting data post certain window
 - Signature validation is ignored
+- acknowledgement is a plain string. (as of now)
 
 # Rules and Validation
 - null values are invalidated

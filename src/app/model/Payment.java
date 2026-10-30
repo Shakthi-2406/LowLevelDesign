@@ -29,4 +29,11 @@ public class Payment {
     public Instant getLastUpdatedAt() { return lastUpdatedAt; }
     public PaymentState getCurrentState() { return currentState; }
     public LinkedHashMap<PaymentState, Instant> getStageTimestamps() { return new LinkedHashMap<>(stageTimestamps); }
+
+    /** Records the move only; transition and ordering rules are enforced by the caller. */
+    public void moveTo(PaymentState next, Instant at) {
+        this.currentState = next;
+        this.lastUpdatedAt = at;
+        this.stageTimestamps.put(next, at);
+    }
 }

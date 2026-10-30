@@ -10,11 +10,11 @@ public class EventRepository {
     private final Map<String, Event> eventsById = new HashMap<>();
 
     public void save(Event event) {
-        throw new UnsupportedOperationException("TODO");
+        eventsById.put(event.getEventId(), event);
     }
 
     public boolean exists(String eventId) {
-        throw new UnsupportedOperationException("TODO");
+        return eventsById.containsKey(eventId);
     }
 
     public List<Event> findByPaymentId(String paymentId) {
